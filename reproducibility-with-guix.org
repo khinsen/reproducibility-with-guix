@@ -1,6 +1,6 @@
 #+TITLE: Computational reproducibility with Guix
 
-
+* Dependencies: what it takes to run a program
 Let's start with a simple (and rather uninteresting) computational program written in C:
 #+begin_src c :tangle pi.c :eval no
 #include <math.h>
@@ -197,4 +197,40 @@ This looks a bit surprising. What's happening here is that =gcc= is defined as a
 Let's take this as a sign that it's time to move on to the next level of Guix hacking: Guile scripts. Guile, an implementation of the Scheme language, is Guix' native language, so using Guile scripts, you get access to everything there is to know about Guix and its packages. If you don't know Guile, don't worry: you should be able to follow without understanding the details of the code.
 
 A note in passing: the [[https://emacs-guix.gitlab.io/website/][emacs-guix]] package provides an intermediate level of Guix exploration for Emacs users. It lets you look at hidden packages, for example. But much of what I will show in the following really requires Guile scripts.
+
+
+* What's in a Guix package?
+
+From the user's point of view, a package is a piece of software with a name and a version number that can be installed using =guix install=. From Guix' point of view, there is more to a package. Let's look at an example of a package definition: =xmag=. I have chosen this package not because I care much about it, but because its definition is small while showcasing all the features I want to explain. You can access it most easily by typing =guix edit xmag=. Here is what you will see:
+#+begin_src scheme :eval no
+(package
+  (name "xmag")
+  (version "1.0.6")
+  (source
+   (origin
+     (method url-fetch)
+     (uri (string-append
+           "mirror://xorg/individual/app/" name "-" version ".tar.gz"))
+     (sha256
+      (base32
+       "19bsg5ykal458d52v0rvdx49v54vwxwqg8q36fdcsv9p2j8yri87"))))
+  (build-system gnu-build-system)
+  (arguments
+   `(#:configure-flags
+     (list (string-append "--with-appdefaultdir="
+                          %output ,%app-defaults-dir))))
+  (inputs
+   `(("libxaw" ,libxaw)))
+  (native-inputs
+   `(("pkg-config" ,pkg-config)))
+  (home-page "https://www.x.org/wiki/")
+  (synopsis "Display or capture a magnified part of a X11 screen")
+  (description "Xmag displays and captures a magnified snapshot of a portion
+of an X11 screen.")
+  (license license:x11))
+#+end_src
+The package definition starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs=, are what I am going to explain here. The rest is documentation for human consumption.. 
+
+The following figure illustrates how the various pieces of information from a package are used in the build process (done by =guix build=, or implicitly when installing or otherwise using a package):
+file:guix-package.svg
 
