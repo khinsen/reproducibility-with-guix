@@ -1,7 +1,7 @@
 #+TITLE: Computational reproducibility with Guix
 
 * Dependencies: what it takes to run a program
-Let's start with a simple (and rather uninteresting) computational program written in C:
+Let's start with a simple (and rather uninteresting) C program:
 #+begin_src c :tangle pi.c :eval no
 #include <math.h>
 #include <stdio.h>
@@ -15,7 +15,7 @@ int main()
 }
 #+end_src
 
-What does it take to actually run this? A C compiler, obviously. Let's create an environment containing nothing but a C compiler. The option =--container= ensures the best possible isolation from the standard environment that your system installation and user account provide for day-to-day work. This environment really contains nothing but a C compiler, and has access to no other files than those in the current directory.
+What does it take to actually run this program? A C compiler, obviously. Let's create an environment containing nothing but a C compiler. The option =--container= ensures the best possible isolation from the standard environment that your system installation and user account provide for day-to-day work. This environment really contains nothing but a C compiler, and has access to no other files than those in the current directory.
 
 #+begin_src sh :session C-compiler :results output :exports both
 guix environment --container --ad-hoc gcc-toolchain
@@ -184,15 +184,15 @@ description: GNU Binutils is a collection of tools for working with binary
 #+end_example
 
 #+begin_src sh :results output :exports both
+exec 2>&1
 guix show gcc@9.2.0
+:
 #+end_src
 
 #+RESULTS:
-#+begin_example
-guix show: error: gcc@9.2.0: package not found
-#+end_example
+: guix show: error: gcc@9.2.0: package not found
 
-This looks a bit surprising. What's happening here is that =gcc= is defined as aa /hidden package/ in Guix. The package is there, but it is hidden from package queries. There is a good reason for this: =gcc= on its own is rather useless, you need =gcc-toolchain= to actually use the compiler. But if both =gcc= and =gcc-toolchain= showed up in a search, that would be more confusing than helpful for most users. Hiding the package is a way to saying "reserved for experts".
+This looks a bit surprising. What's happening here is that =gcc= is defined as a /hidden package/ in Guix. The package is there, but it is hidden from package queries. There is a good reason for this: =gcc= on its own is rather useless, you need =gcc-toolchain= to actually use the compiler. But if both =gcc= and =gcc-toolchain= showed up in a search, that would be more confusing than helpful for most users. Hiding the package is a way of saying "reserved for experts".
 
 Let's take this as a sign that it's time to move on to the next level of Guix hacking: Guile scripts. Guile, an implementation of the Scheme language, is Guix' native language, so using Guile scripts, you get access to everything there is to know about Guix and its packages. If you don't know Guile, don't worry: you should be able to follow without understanding the details of the code.
 
@@ -201,7 +201,7 @@ A note in passing: the [[https://emacs-guix.gitlab.io/website/][emacs-guix]] pac
 
 * What's in a Guix package?
 
-From the user's point of view, a package is a piece of software with a name and a version number that can be installed using =guix install=. From Guix' point of view, there is more to a package. Let's look at an example of a package definition: =xmag=. I have chosen this package not because I care much about it, but because its definition is small while showcasing all the features I want to explain. You can access it most easily by typing =guix edit xmag=. Here is what you will see:
+From the user's point of view, a package is a piece of software with a name and a version number that can be installed using =guix install=. From Guix' point of view, there is more to a package. Let's look at an example of a package definition: =xmag=. I have chosen this package not because I care much about it, but because its definition is short while showcasing all the features I want to explain. You can access it most easily by typing =guix edit xmag=. Here is what you will see:
 #+begin_src scheme :eval no
 (package
   (name "xmag")
