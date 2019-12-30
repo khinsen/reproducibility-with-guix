@@ -234,3 +234,102 @@ The package definition starts with the name and version information you expected
 The following figure illustrates how the various pieces of information from a package are used in the build process (done by =guix build=, or implicitly when installing or otherwise using a package):
 file:guix-package.svg
 
+It may help to translate the Guix jargon to the vocabulary of C programming:
+| Guix package | C program        |
+|--------------+------------------|
+| source code  | source code      |
+| inputs       | libraries        |
+| arguments    | compiler options |
+| build system | compiler         |
+| output       | executable       |
+
+Building a package is in fact a generalization of compiling a program. We could in fact create a "GCC build system" for Guix that would simply run =gcc=, but such a build system would be of little practical use, since most real-life software consists of more than just one C source code file, and requires additional pre- or post-processing steps.
+
+The example shown above has =native-inputs= in addition to "plain" =inputs=. There's actually a third variant, =propagated-inputs=, but =xmag= doesn't have ny. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now.
+
+Guile uses a record type called =<package>= to represent packages, which is defined in module =(guix packages)=. There is also a module =(gnu packages)=, which contains the actual package definitions - be careful not to confuse the two (as I always do). Here is a simple Guile script that shows some package information, much like the =guix show= command that I used earlier:
+#+begin_src scheme :results output
+(use-modules (guix packages)
+             (gnu packages)) 
+
+(define gcc-toolchain
+  (specification->package "gcc-toolchain"))
+
+(format #t "Name: ~a\n" (package-name gcc-toolchain))
+(format #t "Version: ~a\n" (package-version gcc-toolchain))
+(format #t "Inputs: ~a\n" (package-direct-inputs gcc-toolchain))
+#+end_src
+
+#+RESULTS:
+: Name: gcc-toolchain
+: Version: 9.2.0
+: Inputs: ((gcc #<package gcc@9.2.0 gnu/packages/gcc.scm:524 7f50ed131b00>) (ld-wrapper #<package ld-wrapper@0 gnu/packages/base.scm:505 7f50ec340f20>) (binutils #<package binutils@2.32 gnu/packages/commencement.scm:2185 7f50ec338790>) (libc #<package glibc@2.29 gnu/packages/commencement.scm:2143 7f50ec338840>) (libc-debug #<package glibc@2.29 gnu/packages/commencement.scm:2143 7f50ec338840> debug) (libc-static #<package glibc@2.29 gnu/packages/commencement.scm:2143 7f50ec338840> static))
+
+This script first calls =specification->package=  to look up the package using the same rules as the =guix= command line interface: pick the latest available version. Then it extracts various information about the package. Note that =package-direct-inputs= returns the combination of =package-inputs=, =package-native-inputs=, and =package-propagated-inputs=. As I said above, I don't care about the distinction here.
+
+The inputs are not shown in a particularly nice form, so let's write two Guile functions to improve it:
+#+begin_src scheme :results output
+(use-modules (guix packages)
+             (gnu packages)
+             (ice-9 match))
+
+(define (package->specification package)
+  (format #f "~a@~a"
+          (package-name package)
+          (package-version package)))
+
+(define (input->specification input)
+  (match input
+    ((label (? package? package) . _)
+     (package->specification package))
+    (other-item
+     (format #f "~a" other-item))))
+
+(define gcc-toolchain
+  (specification->package "gcc-toolchain"))
+
+(format #t "Package: ~a\n"
+        (package->specification gcc-toolchain))
+(format #t "Inputs: ~a\n"
+        (map input->specification (package-direct-inputs gcc-toolchain)))
+#+end_src
+
+#+RESULTS:
+: Package: gcc-toolchain@9.2.0
+: Inputs: (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29 glibc@2.29 glibc@2.29)
+
+That looks much better. As you can see from the code, a list of inputs is a bit more than a list of packages, as each input also has a label and possibly more - but all we care about here is the package. That also explains why we see =glibc= three times in the input list: the "possibly more" information is different for each of them. As a final cleanup step, let's show a list of unique inputs:
+#+begin_src scheme :results output
+(use-modules (guix packages)
+             (gnu packages)
+             (srfi srfi-1)
+             (ice-9 match))
+
+(define (package->specification package)
+  (format #f "~a@~a"
+          (package-name package)
+          (package-version package)))
+
+(define (input->specification input)
+  (match input
+    ((label (? package? package) . _)
+     (package->specification package))
+    (other-item
+     (format #f "~a" other-item))))
+
+(define (unique-inputs inputs)
+  (delete-duplicates
+   (map input->specification inputs)))
+
+(define gcc-toolchain
+  (specification->package "gcc-toolchain"))
+
+(format #t "Package: ~a\n"
+        (package->specification gcc-toolchain))
+(format #t "Inputs: ~a\n"
+        (unique-inputs (package-direct-inputs gcc-toolchain)))
+#+end_src
+
+#+RESULTS:
+: Package: gcc-toolchain@9.2.0
+: Inputs: (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29)
