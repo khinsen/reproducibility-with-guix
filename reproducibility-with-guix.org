@@ -243,9 +243,30 @@ It may help to translate the Guix jargon to the vocabulary of C programming:
 | build system | compiler         |
 | output       | executable       |
 
-Building a package is in fact a generalization of compiling a program. We could in fact create a "GCC build system" for Guix that would simply run =gcc=, but such a build system would be of little practical use, since most real-life software consists of more than just one C source code file, and requires additional pre- or post-processing steps.
+Building a package can be considered a generalization of compiling a program. We could in fact create a "GCC build system" for Guix that would simply run =gcc=, but such a build system would be of little practical use, since most real-life software consists of more than just one C source code file, and requires additional pre- or post-processing steps.
 
-The example shown above has =native-inputs= in addition to "plain" =inputs=. There's actually a third variant, =propagated-inputs=, but =xmag= doesn't have ny. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now.
+The example shown above has =native-inputs= in addition to "plain" =inputs=. There's actually a third variant, =propagated-inputs=, but =xmag= doesn't have ny. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now. Another omission I will make is the possibility to define several outputs for a package. This is done for particularly big packages, in order to reduce the footprint of installations, but for the purposes of reproducibility, it's OK to treat all outputs of a package a s single unit.
+
+* Dependencies
+
+You may have noticed the absence of the term "dependency" from the last section. There is a good reason for that: the term is used in somewhat different meanings, and that can create confusion.
+
+The figure above shows three kinds of input to the build system: source, inputs, and arguments. These categories reflect the packagers' point of view: "source" is what the authors of the software supply, "inputs" are other packages, written by different people, and "arguments" is what the packagers themselves add to the build procedure. It is important to understand that from a purely technical point of view, there is no fundamental difference between the three categories. You could, for example, define a package that contains C source code in the build system arguments, and has nothing labelled as "source". This would be inconvenient, and confusing for others, so I don't recommend you actually do this. The distinction is actually important, but for humans, not for computers. In fact, even the build system is not fundamentally distinct from its inputs. You could actually define a special-purpose build system for one package, and put all the source code in there. At the level of the CPU and the computer's memory, a build process (as in fact /any/ computation) looks like
+file:computation.png
+It is human interpretation that makes this look like
+file:data-code.png
+and in a next step as
+file:data-program-environment.png
+We can go on and divide the "environment" into "operating system", "development tools", and "application software", for example, but the further we go in decomposing the input to a computation, the more arbitrary it gets.
+
+From this point of view, a software's dependencies consist of all the inputs required to run it, in addition to its source code. For a Guix package, the dependencies are thus
+- its inputs
+- the build system arguments
+- the build system itself
+- Guix
+- the GNU/Linux operating system
+
+* Package exploration in Guile
 
 Guile uses a record type called =<package>= to represent packages, which is defined in module =(guix packages)=. There is also a module =(gnu packages)=, which contains the actual package definitions - be careful not to confuse the two (as I always do). Here is a simple Guile script that shows some package information, much like the =guix show= command that I used earlier:
 #+begin_src scheme :results output
@@ -333,3 +354,4 @@ That looks much better. As you can see from the code, a list of inputs is a bit 
 #+RESULTS:
 : Package: gcc-toolchain@9.2.0
 : Inputs: (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29)
+
