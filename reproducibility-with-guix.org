@@ -355,3 +355,61 @@ From this point of view, a software's dependencies consist of all the inputs req
 - the build system itself
 - Guix
 - the GNU/Linux operating system
+
+In the following, I will not mention the last two items any more, because they are a common dependency of all Guix packages, but it's important not to forget about them. A change in Guix or in GNU/Linux can actually make a computation non-reproducible, although in practice that happens very rarely.
+
+* Build systems are packages as well
+
+I hope that by now you have a good idea of what a package is: a recipe for building outputs from source and inputs, with inputs being the outputs of other packages. The recipe involves a build system and arguments supplied to it. So... what exactly is a build system? I have introduced it as a generalization of a compiler, which describes its role. But where does a build system come from in Guix?
+
+The ultimate answer is of course the source code. Build systems are pieces of Guile code that are part of Guix. But this Guile code is only a shallow layer orchestrating invocations of other software, such as =gcc= or =make=. And that software is defined by packages. So in the end, from a reproducibility point of view, we can replace the "build system" item in our list of dependenies by "a bundle of packages". In other words: more inputs,
+
+Before Guix can build a package, it must gather all the required ingredients, and that includes replacing the build system by the packages it represents. The resulting list of ingredients is called a =bag=, and we can access it using a Guile script:
+
+#+begin_src scheme :results output
+(use-modules (guix packages)
+             (gnu packages)
+             (srfi srfi-1)
+             (ice-9 match))
+
+(define (package->specification package)
+  (format #f "~a@~a"
+          (package-name package)
+          (package-version package)))
+
+(define (input->specification input)
+  (match input
+    ((label (? package? package) . _)
+     (package->specification package))
+    ((label (? origin? origin))
+     (format #f "[source code from ~a]"
+             (origin-uri origin)))
+    (other-input
+     (format #f "~a" other-input))))
+
+(define (unique-inputs inputs)
+  (delete-duplicates
+   (map input->specification inputs)))
+
+(define hello
+  (specification->package "hello"))
+
+(format #t "Package: ~a\n"
+        (package->specification hello))
+(format #t "Package inputs: ~a\n"
+        (unique-inputs (package-direct-inputs hello)))
+(format #t "Build inputs: ~a\n"
+        (unique-inputs
+         (bag-direct-inputs
+          (package->bag hello))))
+#+end_src
+
+#+RESULTS:
+: Package: hello@2.10
+: Package inputs: ()
+: Build inputs: ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
+
+I have used a different example, =binutils=, because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, =hello=, is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
+
+If you compare this script to the previous one that printed only the package inputs, you will notice two major new features. In =input->specification=, there is an additional case for the source code reference. And in the last statement, =package->bag= constructs a bag from the package, before =bag-direct-inputs= is called to get the input list.
+
