@@ -154,7 +154,7 @@ gcc --version
 : This is free software; see the source for copying conditions.  There is NO
 : warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 
-The dependency list of =gcc-toolchain@9.2.0= is among the informtion provided by =guix show= (see output above):
+The dependency list of =gcc-toolchain@9.2.0= is among the information provided by =guix show= (see output above):
 #+begin_example
 binutils@2.32 gcc@9.2.0 glibc@2.29 ld-wrapper@0
 #+end_example
@@ -192,16 +192,17 @@ guix show gcc@9.2.0
 #+RESULTS:
 : guix show: error: gcc@9.2.0: package not found
 
-This looks a bit surprising. What's happening here is that =gcc= is defined as a /hidden package/ in Guix. The package is there, but it is hidden from package queries. There is a good reason for this: =gcc= on its own is rather useless, you need =gcc-toolchain= to actually use the compiler. But if both =gcc= and =gcc-toolchain= showed up in a search, that would be more confusing than helpful for most users. Hiding the package is a way of saying "reserved for experts".
+This looks a bit surprising. What's happening here is that =gcc= is defined as a /hidden package/ in Guix. The package is there, but it is hidden from package queries. There is a good reason for this: =gcc= on its own is rather useless, you need =gcc-toolchain= to actually use the compiler. But if both =gcc= and =gcc-toolchain= showed up in a search, that would be more confusing than helpful for most users. Hiding the package is a way of saying "experts only".
 
 Let's take this as a sign that it's time to move on to the next level of Guix hacking: Guile scripts. Guile, an implementation of the Scheme language, is Guix' native language, so using Guile scripts, you get access to everything there is to know about Guix and its packages. If you don't know Guile, don't worry: you should be able to follow without understanding the details of the code.
 
 A note in passing: the [[https://emacs-guix.gitlab.io/website/][emacs-guix]] package provides an intermediate level of Guix exploration for Emacs users. It lets you look at hidden packages, for example. But much of what I will show in the following really requires Guile scripts.
 
+* Anatomy of a Guix package
 
-* What's in a Guix package?
+From the user's point of view, a package is a piece of software with a name and a version number that can be installed using =guix install=. The packager's point of view is quite a bit different. In fact, what users consider a package is more precisely called the package's /output/ in Guix jargon. The full package is a recipe for creating this output.
 
-From the user's point of view, a package is a piece of software with a name and a version number that can be installed using =guix install=. From Guix' point of view, there is more to a package. Let's look at an example of a package definition: =xmag=. I have chosen this package not because I care much about it, but because its definition is short while showcasing all the features I want to explain. You can access it most easily by typing =guix edit xmag=. Here is what you will see:
+To see how all these concepts fit together, let's look at an example of a package definition: =xmag=. I have chosen this package not because I care much about it, but because its definition is short while showcasing all the features I want to explain. You can access it most easily by typing =guix edit xmag=. Here is what you will see:
 #+begin_src scheme :eval no
 (package
   (name "xmag")
@@ -229,7 +230,9 @@ From the user's point of view, a package is a piece of software with a name and 
 of an X11 screen.")
   (license license:x11))
 #+end_src
-The package definition starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs=, are what I am going to explain here. The rest is documentation for human consumption.. 
+The package definition starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs= supply the information required for /building/ the package. That's what matters for reproducibility, so that's what I will focus on. The remaining items are documentation for human consumption, important for other reasons but not for reproducibility. 
+
+The example package definition has =native-inputs= in addition to "plain" =inputs=. There's actually a third variant, =propagated-inputs=, but =xmag= doesn't have any. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now on. Another omission I will make is the possibility to define several outputs for a package. This is done for particularly big packages, in order to reduce the footprint of installations, but for the purposes of reproducibility, it's OK to treat all outputs of a package a s single unit.
 
 The following figure illustrates how the various pieces of information from a package are used in the build process (done by =guix build=, or implicitly when installing or otherwise using a package):
 file:guix-package.svg
@@ -244,27 +247,6 @@ It may help to translate the Guix jargon to the vocabulary of C programming:
 | output       | executable       |
 
 Building a package can be considered a generalization of compiling a program. We could in fact create a "GCC build system" for Guix that would simply run =gcc=, but such a build system would be of little practical use, since most real-life software consists of more than just one C source code file, and requires additional pre- or post-processing steps.
-
-The example shown above has =native-inputs= in addition to "plain" =inputs=. There's actually a third variant, =propagated-inputs=, but =xmag= doesn't have ny. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now. Another omission I will make is the possibility to define several outputs for a package. This is done for particularly big packages, in order to reduce the footprint of installations, but for the purposes of reproducibility, it's OK to treat all outputs of a package a s single unit.
-
-* Dependencies
-
-You may have noticed the absence of the term "dependency" from the last section. There is a good reason for that: the term is used in somewhat different meanings, and that can create confusion.
-
-The figure above shows three kinds of input to the build system: source, inputs, and arguments. These categories reflect the packagers' point of view: "source" is what the authors of the software supply, "inputs" are other packages, written by different people, and "arguments" is what the packagers themselves add to the build procedure. It is important to understand that from a purely technical point of view, there is no fundamental difference between the three categories. You could, for example, define a package that contains C source code in the build system arguments, and has nothing labelled as "source". This would be inconvenient, and confusing for others, so I don't recommend you actually do this. The distinction is actually important, but for humans, not for computers. In fact, even the build system is not fundamentally distinct from its inputs. You could actually define a special-purpose build system for one package, and put all the source code in there. At the level of the CPU and the computer's memory, a build process (as in fact /any/ computation) looks like
-file:computation.png
-It is human interpretation that makes this look like
-file:data-code.png
-and in a next step as
-file:data-program-environment.png
-We can go on and divide the "environment" into "operating system", "development tools", and "application software", for example, but the further we go in decomposing the input to a computation, the more arbitrary it gets.
-
-From this point of view, a software's dependencies consist of all the inputs required to run it, in addition to its source code. For a Guix package, the dependencies are thus
-- its inputs
-- the build system arguments
-- the build system itself
-- Guix
-- the GNU/Linux operating system
 
 * Package exploration in Guile
 
@@ -319,7 +301,7 @@ The inputs are not shown in a particularly nice form, so let's write two Guile f
 : Package: gcc-toolchain@9.2.0
 : Inputs: (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29 glibc@2.29 glibc@2.29)
 
-That looks much better. As you can see from the code, a list of inputs is a bit more than a list of packages, as each input also has a label and possibly more - but all we care about here is the package. That also explains why we see =glibc= three times in the input list: the "possibly more" information is different for each of them. As a final cleanup step, let's show a list of unique inputs:
+That looks much better. As you can see from the code, a list of inputs is a bit more than a list of packages. It is in fact a list of labelled /outputs/ of packages. That also explains why we see =glibc= three times in the input list: =glibc= defines three distinct outputs. For reproducibility, all we care about is the package references. Later on in this post, we will deal with much longer input lists, so as a final cleanup step, let's show only unique package references from the list of inputs:
 #+begin_src scheme :results output
 (use-modules (guix packages)
              (gnu packages)
@@ -355,3 +337,21 @@ That looks much better. As you can see from the code, a list of inputs is a bit 
 : Package: gcc-toolchain@9.2.0
 : Inputs: (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29)
 
+* Dependencies
+
+You may have noticed the absence of the term "dependency" from the last two sections. There is a good reason for that: the term is used in somewhat different meanings, and that can create confusion.
+
+The figure above shows three kinds of input to the build system: source, inputs, and arguments. These categories reflect the packagers' point of view: "source" is what the authors of the software supply, "inputs" are other packages, written by different people, and "arguments" is what the packagers themselves add to the build procedure. It is important to understand that from a purely technical point of view, there is no fundamental difference between the three categories. You could, for example, define a package that contains C source code in the build system arguments, but leaves "source" empty. This would be inconvenient, and confusing for others, so I don't recommend you actually do this. The three categories are important, but for humans, not for computers. In fact, even the build system is not fundamentally distinct from its inputs. You could define a special-purpose build system for one package, and put all the source code in there. At the level of the CPU and the computer's memory, a build process (as in fact /any/ computation) looks like
+file:computation.png
+It is human interpretation that decomposes this into
+file:data-code.png
+and in a next step into
+file:data-program-environment.png
+We can go on and divide the "environment" into "operating system", "development tools", and "application software", for example, but the further we go in decomposing the input to a computation, the more arbitrary it gets.
+
+From this point of view, a software's dependencies consist of all the inputs required to run it, in addition to its source code. For a Guix package, the dependencies are thus
+- its inputs
+- the build system arguments
+- the build system itself
+- Guix
+- the GNU/Linux operating system
