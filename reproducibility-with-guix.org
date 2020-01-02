@@ -409,7 +409,67 @@ Before Guix can build a package, it must gather all the required ingredients, an
 : Package inputs: ()
 : Build inputs: ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
 
-I have used a different example, =binutils=, because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, =hello=, is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
+I have used a different example, =binutils=, because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, =hello= (a short demo program printing "Hello, world" in the language of the system installation), is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
 
 If you compare this script to the previous one that printed only the package inputs, you will notice two major new features. In =input->specification=, there is an additional case for the source code reference. And in the last statement, =package->bag= constructs a bag from the package, before =bag-direct-inputs= is called to get the input list.
+
+* Inputs are outputs
+
+I have mentioned before that one package's inputs are other packages' outputs, but that fact deserves a more in-depth discussion because of its crucial importance for reproducibility. A package is a recipe for building outputs from source and inputs. Since these inputs are outputs, they must have been built as well. Package building is therefore a process consisting of multiple steps. An immediate consequence is that any computation making use of packaged software is a multi-step computation as well.
+
+Remember the short C program computing π from the beginning of this post? Running that program is only the last step in a long series of computations. Before you can run =pi=, you must compile =pi.c=. That requires the package =gcc-toolchain=, which must first be built. And before it can be built, its inputs must be built. And so on. If you want the output of =pi= to be reproducible, *the whole chain of computations must be reproducible*, because each step can have an impact on the results produced by =pi=.
+
+So... where this chain start? Nobody writes machine code any more these days, so all software requires some compiler or interpreter. And that means that for every package, there are other packages that must be built first. This is known as the bootstrapping problem. A rough summary of the solution is that the chain starts on somebody else's computer, which creates a bootstrap seed, an ideally small package that is downloaded in precompiled form. See [[https://guix.gnu.org/blog/2019/guix-reduces-bootstrap-seed-by-50/][this post by Jan Nieuwenhuizen]] for details of this procedure. The bootstrap seed is not the real start of the chain, but as long as we can retrieve an identical copy at a later time, that's good enough for reproducibility.
+
+Now we are finally ready for the ultimate step in dependency analysis: identifying all packages on which a computation depends, right up to the bootstrap seed. The starting point is the list of direct inputs of the bag derived from a package, which we looked at in the previous script. For each package in that list, we must apply this same procedure, recursively. The function =package-closure= in Guix does exactly the, and if you have some basic knowledge of Scheme, you should be able to understand its implementation now. 
+
+#+begin_src scheme :results output
+(use-modules (guix packages)
+             (gnu packages)
+             (srfi srfi-1)
+             (ice-9 match))
+
+(define (package->specification package)
+  (format #f "~a@~a"
+          (package-name package)
+          (package-version package)))
+
+(define (input->specification input)
+  (match input
+    ((label (? package? package) . _)
+     (package->specification package))
+    ((label (? origin? origin))
+     (format #f "[source code from ~a]"
+             (origin-uri origin)))
+    (other-input
+     (format #f "~a" other-input))))
+
+(define (unique-inputs inputs)
+  (delete-duplicates
+   (map input->specification inputs)))
+
+(define hello
+  (specification->package "hello"))
+
+(format #t "Package: ~a\n"
+        (package->specification hello))
+(format #t "Package inputs: ~a\n"
+        (unique-inputs (package-direct-inputs hello)))
+(format #t "Build inputs: ~a\n"
+        (unique-inputs
+         (bag-direct-inputs
+          (package->bag hello))))
+(format #t "Package closure: ~a\n"
+        (delete-duplicates
+         (map package->specification
+              (package-closure (list hello)))))
+#+end_src
+
+#+RESULTS:
+: Package: hello@2.10
+: Package inputs: ()
+: Build inputs: ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
+: Package closure: (m4@1.4.18 libatomic-ops@7.6.10 gmp@6.1.2 libgc@7.6.12 libltdl@2.4.6 libunistring@0.9.10 libffi@3.2.1 pkg-config@0.29.2 guile@2.2.6 libsigsegv@2.12 lzip@1.21 ed@1.15 perl@5.30.0 guile-bootstrap@2.0 zlib@1.2.11 xz@5.2.4 ncurses@6.1-20190609 libxml2@2.9.9 attr@2.4.48 gettext-minimal@0.20.1 gcc-cross-boot0-wrapped@7.4.0 libstdc++@7.4.0 ld-wrapper-boot3@0 bootstrap-binaries@0 ld-wrapper-boot0@0 flex@2.6.4 glibc-intermediate@2.29 libstdc++-boot0@4.9.4 expat@2.2.7 gcc-mesboot1-wrapper@4.7.4 mesboot-headers@0.19 gcc-core-mesboot@2.95.3 bootstrap-mes@0 bootstrap-mescc-tools@0.5.2 tcc-boot0@0.9.26-6.c004e9a mes-boot@0.19 tcc-boot@0.9.27 make-mesboot0@3.80 gcc-mesboot0@2.95.3 binutils-mesboot0@2.20.1a make-mesboot@3.82 diffutils-mesboot@2.7 gcc-mesboot1@4.7.4 glibc-headers-mesboot@2.16.0 glibc-mesboot0@2.2.5 binutils-mesboot@2.20.1a linux-libre-headers@4.19.56 linux-libre-headers-bootstrap@0 gcc-mesboot@4.9.4 glibc-mesboot@2.16.0 gcc-cross-boot0@7.4.0 bash-static@5.0.7 gettext-boot0@0.19.8.1 python-minimal@3.5.7 perl-boot0@5.30.0 texinfo@6.6 bison@3.4.1 gzip@1.10 libcap@2.27 acl@2.2.53 glibc-utf8-locales@2.29 gcc-mesboot-wrapper@4.9.4 file-boot0@5.33 findutils-boot0@4.6.0 diffutils-boot0@3.7 make-boot0@4.2.1 binutils-cross-boot0@2.32 glibc@2.29 gcc@7.4.0 binutils@2.32 ld-wrapper@0 bash-minimal@5.0.7 make@4.2.1 coreutils@8.31 grep@3.3 sed@4.7 gawk@5.0.1 findutils@4.6.0 patch@2.7.6 diffutils@3.7 file@5.33 bzip2@1.0.6 tar@1.32 hello@2.10)
+
+That's 84 packages, just for printing "Hello, world!". As promised, it includes the boostrap seed, called =bootstrap-binaires=. It may be more surprising to see Perl and Python in the dependency list of what is a pure C program. The explanation is that the build process of =gcc= and =glibc= contains Perl and Python code.
 
