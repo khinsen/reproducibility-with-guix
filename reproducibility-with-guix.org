@@ -1,4 +1,5 @@
 #+TITLE: Reproducible computations with Guix
+#+STARTUP: inlineimages
 
 * Dependencies: what it takes to run a program
 This post is about reproducible computations, so let's start with a computation. A short, though rather uninteresting, C program is a good starting point. It computes π in three different ways:
@@ -261,7 +262,7 @@ The package definition starts with the name and version information you expected
 The example package definition has =native-inputs= in addition to "plain" =inputs=. There's a third variant, =propagated-inputs=, but =xmag= doesn't have any. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now on. Another omission I will make is the possibility to define several outputs for a package. This is done for particularly big packages, in order to reduce the footprint of installations, but for the purposes of reproducibility, it's OK to treat all outputs of a package a single unit.
 
 The following figure illustrates how the various pieces of information from a package are used in the build process (done explicitly by =guix build=, or implicitly when installing or otherwise using a package):
-file:guix-package.svg
+[[file:guix-package.svg]]
 
 It may help to translate the Guix jargon to the vocabulary of C programming:
 | Guix package | C program        |
@@ -368,11 +369,11 @@ That looks much better. As you can see from the code, a list of inputs is a bit 
 You may have noticed the absence of the term "dependency" from the last two sections. There is a good reason for that: the term is used in somewhat different meanings, and that can create confusion. Guix jargon therefore avoids it.
 
 The figure above shows three kinds of input to the build system: source, inputs, and arguments. These categories reflect the packagers' point of view: =source= is what the authors of the software supply, =inputs= are other packages, and =arguments= is what the packagers themselves add to the build procedure. It is important to understand that from a purely technical point of view, there is no fundamental difference between the three categories. You could, for example, define a package that contains C source code in the build system =arguments=, but leaves =source= empty. This would be inconvenient, and confusing for others, so I don't recommend you actually do this. The three categories are important, but for humans, not for computers. In fact, even the build system is not fundamentally distinct from its inputs. You could define a special-purpose build system for one package, and put all the source code in there. At the level of the CPU and the computer's memory, a build process (as in fact /any/ computation) looks like
-file:computation.png
+[[file:computation.png]]
 It is human interpretation that decomposes this into
-file:data-code.png
+[[file:data-code.png]]
 and in a next step into
-file:data-program-environment.png
+[[file:data-program-environment.png]]
 We can go on and divide the environment into operating system, development tools, and application software, for example, but the further we go in decomposing the input to a computation, the more arbitrary it gets.
 
 From this point of view, a software's dependencies consist of everything required to run it in addition to its source code. For a Guix package, the dependencies are thus
