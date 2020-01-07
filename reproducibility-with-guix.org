@@ -499,6 +499,31 @@ Now we are finally ready for the ultimate step in dependency analysis: identifyi
 
 That's 84 packages, just for printing "Hello, world!". As promised, it includes the boostrap seed, called =bootstrap-binaries=. It may be more surprising to see Perl and Python in the dependency list of what is a pure C program. The explanation is that the build process of =gcc= and =glibc= contains Perl and Python code. Considering that both Perl and Python are written in C and use =glibc=, this hints at why bootstrapping is a hard problem!
 
+As promised, here is a [[file:show-dependencies.scm][Guile script]] that you can download and run from the command line to do dependency analyses much like the ones I have shown. Just give the packages whose combined list of dependencies you want to analyze. For example:
+#+begin_src sh :results output :exports both
+./show-dependencies.scm hello
+#+end_src
+
+#+RESULTS:
+: Packages: 1
+:   hello@2.10
+: Package inputs: 0 packages
+:  
+: Build inputs: 20 packages
+:   [source code from mirror://gnu/hello/hello-2.10.tar.gz] bash-minimal@5.0.7 binutils@2.32 bzip2@1.0.6 coreutils@8.31 diffutils@3.7 file@5.33 findutils@4.6.0 gawk@5.0.1 gcc@7.4.0 glibc-utf8-locales@2.29 glibc@2.29 grep@3.3 gzip@1.10 ld-wrapper@0 make@4.2.1 patch@2.7.6 sed@4.7 tar@1.32 xz@5.2.4
+: Package closure: 84 packages
+:   acl@2.2.53 attr@2.4.48 bash-minimal@5.0.7 bash-static@5.0.7 binutils-cross-boot0@2.32 binutils-mesboot0@2.20.1a binutils-mesboot@2.20.1a binutils@2.32 bison@3.4.1 bootstrap-binaries@0 bootstrap-mes@0 bootstrap-mescc-tools@0.5.2 bzip2@1.0.6 coreutils@8.31 diffutils-boot0@3.7 diffutils-mesboot@2.7 diffutils@3.7 ed@1.15 expat@2.2.7 file-boot0@5.33 file@5.33 findutils-boot0@4.6.0 findutils@4.6.0 flex@2.6.4 gawk@5.0.1 gcc-core-mesboot@2.95.3 gcc-cross-boot0-wrapped@7.4.0 gcc-cross-boot0@7.4.0 gcc-mesboot-wrapper@4.9.4 gcc-mesboot0@2.95.3 gcc-mesboot1-wrapper@4.7.4 gcc-mesboot1@4.7.4 gcc-mesboot@4.9.4 gcc@7.4.0 gettext-boot0@0.19.8.1 gettext-minimal@0.20.1 glibc-headers-mesboot@2.16.0 glibc-intermediate@2.29 glibc-mesboot0@2.2.5 glibc-mesboot@2.16.0 glibc-utf8-locales@2.29 glibc@2.29 gmp@6.1.2 grep@3.3 guile-bootstrap@2.0 guile@2.2.6 gzip@1.10 hello@2.10 ld-wrapper-boot0@0 ld-wrapper-boot3@0 ld-wrapper@0 libatomic-ops@7.6.10 libcap@2.27 libffi@3.2.1 libgc@7.6.12 libltdl@2.4.6 libsigsegv@2.12 libstdc++-boot0@4.9.4 libstdc++@7.4.0 libunistring@0.9.10 libxml2@2.9.9 linux-libre-headers-bootstrap@0 linux-libre-headers@4.19.56 lzip@1.21 m4@1.4.18 make-boot0@4.2.1 make-mesboot0@3.80 make-mesboot@3.82 make@4.2.1 mes-boot@0.19 mesboot-headers@0.19 ncurses@6.1-20190609 patch@2.7.6 perl-boot0@5.30.0 perl@5.30.0 pkg-config@0.29.2 python-minimal@3.5.7 sed@4.7 tar@1.32 tcc-boot0@0.9.26-6.c004e9a tcc-boot@0.9.27 texinfo@6.6 xz@5.2.4 zlib@1.2.11
+
+You can now easily experiment yourself, even if you are not at ease with Guile. For example, suppose you have a small Python script that plots some data using matplotlib. What are its dependencies? First you should check that it runs in a minimal environment:
+#+begin_src sh :results output :exports both :eval no
+guix environment --container --ad-hoc python python-matplotlib -- python my-script.py
+#+end_src
+Next, find its dependencies:
+#+begin_src sh :results output :exports both :eval no
+./show-dependencies.scm python python-matplotlib
+#+end_src
+I won't show the output here because it is rather long - the package closure contains 499 packages!
+
 * OK, but... what are the /real/ dependencies?
 
 I have explained dependencies along these lines in a few seminars. There's one question that someone in the audience is bound to ask: What do the results of a computation /really/ depend on? The output of =hello= is ="Hello, world!"=, no matter which version of =gcc= I use to compile it, and no matter which version of =python= was used in building =glibc=. The package closure is a worst-case estimate: it contains everything that can /potentially/ influence the results, though most of it doesn't in practice. Unfortunately, there is no way to identify the dependencies that matter automatically, because answering that question in general (i.e. for arbitrary software) is equivalent to solving the [[https://en.wikipedia.org/wiki/Halting_problem][halting problem]].
