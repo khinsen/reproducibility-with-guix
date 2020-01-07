@@ -532,3 +532,72 @@ Most package managers, such as Debian's =apt= or the multi-platform =conda=, tak
 
 One important case where build-time dependencies matter is floating-point computations. For historical reasons, they are surrounded by an aura of vagueness and imprecision, which goes back to its early days, when many details were poorly understood and implementations varied a lot. Today, all computers used for scientific computing respect the [[https://en.wikipedia.org/wiki/IEEE_754][IEEE 754 standard]] that precisely defines how floating-point numbers are represented in memory and what the result of each arithmetic operation must be. Floating-point arithmetic is thus perfectly deterministic and even perfectly portable between machines, if expressed in terms of the operations defined by the standard. However, high-level languages such as C or Fortran do not allow programmers to do that. Its designers assume (probably correctly) that most programmers do not want to deal with the intricate details of rounding. Therefore they provide only a simplified interface to the arithmetic operations of IEE 754, which incidentally also provides more liberty for code optimization to compiler writers. The net result is that the complete specification of a program's results is its source code /plus the compiler and the compilation options/. You thus /can/ get reproducible floating-point results if you include all compilation steps into the perimeter of your computation, at least for code running on a single processor. Parallel computing is a different story: it involves voluntarily giving up reproducibility in exchange for speed. Reproducibility then becomes a best-effort approach of limiting the collateral damage done by optimization through the clever design of algorithms.
 
+* Reproducing a reproducible computation
+
+So far, I have explained the theory behind reproducible computations. The take-home message is that to be sure to get exactly the same results in the future, you have to use the exact same versions of all packages in the package closure of your immediate dependencies. I have also shown you how you can access that package closure. There is one missing piece: how do you actually run your program in the future, using the same environment?
+
+The good news is that doing this is a lot simpler than understanding my lengthy explanations (which is why I leave this for the end!). The complex dependency graphs that I have analyzed up to here are encoded in the Guix source code, so all you need to re-create your environment is the exact same version of Guix! You get that version using
+#+begin_src sh :results output :exports both
+guix describe
+#+end_src
+
+#+RESULTS:
+: Generation 15	Jan 06 2020 13:30:45	(current)
+:   guix 769b96b
+:     repository URL: https://git.savannah.gnu.org/git/guix.git
+:     branch: master
+:     commit: 769b96b62e8c09b078f73adc09fb860505920f8f
+
+The critical information here is the unpleasantly looking string of hexadecimal digits after "commit". This is all it takes to uniquely identify a version of Guix. And to re-use it in the future, all you need is Guix' time machine:
+
+#+begin_src sh :session reproduce-C-compiler :results output :exports both
+guix time-machine --commit=769b96b62e8c09b078f73adc09fb860505920f8f -- environment --ad-hoc gcc-toolchain
+#+end_src
+
+#+RESULTS:
+: 
+: Updating channel 'guix' from Git repository at 'https://git.savannah.gnu.org/git/guix.git'...
+
+#+begin_src sh :session reproduce-C-compiler :results output :exports both
+gcc pi.c -o pi
+./pi
+#+end_src
+
+#+RESULTS:
+: 
+: pi = 3.1415926536
+: 4 * atan(1.): 3.1415926536
+: Leibniz' formula (four terms): 2.8952380952
+
+The time machine actually downloads the specified version of Guix and passes it the rest of the command line. You are running the same code again. Even bugs in Guix will be reproduced faithfully!
+
+For many practical use cases, this technique is sufficient. But there are two variants you should know about for more complicated situations:
+
+ - If you need an environment with many packages, you should use a manifest rather than list the packages on the command line. See [[https://guix.gnu.org/manual/en/html_node/Invoking-guix-environment.html][the manual]] for details.
+
+ - If you need packages from additional channels, i.e. packages that are not part of the official Guix distribution, you should store a complete channel description in a file using
+#+begin_src sh :results none :exports code
+guix describe -f channels > guix-version-for-reproduction.txt
+#+end_src
+
+and feed that file to the time machine:
+#+begin_src sh :session reproduce-C-compiler-2 :results output :exports both
+guix time-machine --channels=guix-version-for-reproduction.txt -- environment --ad-hoc gcc-toolchain
+#+end_src
+
+#+RESULTS:
+: 
+: Updating channel 'guix' from Git repository at 'https://git.savannah.gnu.org/git/guix.git'...
+
+#+begin_src sh :session reproduce-C-compiler-2 :results output :exports both
+gcc pi.c -o pi
+./pi
+#+end_src
+
+#+RESULTS:
+: 
+: pi = 3.1415926536
+: 4 * atan(1.): 3.1415926536
+: Leibniz' formula (four terms): 2.8952380952
+
+And now... congratulations for having survived to the end of this long journey! May all your computations be reproducible, with Guix.
