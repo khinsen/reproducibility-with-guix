@@ -33,28 +33,36 @@
   (define packages
     (map specification->package args))
   (define inputs
-    (delete-duplicates
-     (apply append
-            (map (lambda (package)
-                   (unique-inputs
-                    (package-direct-inputs package)))
-                 packages))))
+    (sort
+     (delete-duplicates
+      (apply append
+             (map (lambda (package)
+                    (unique-inputs
+                     (package-direct-inputs package)))
+                  packages)))
+     string<))
   (define build-inputs
-    (delete-duplicates
-     (apply append
-            (map (lambda (package)
-                   (unique-inputs
-                    (bag-direct-inputs
-                     (package->bag package))))
-                 packages))))
+    (sort
+     (delete-duplicates
+      (apply append
+             (map (lambda (package)
+                    (unique-inputs
+                     (bag-direct-inputs
+                      (package->bag package))))
+                  packages)))
+     string<))
   (define closure
-    (delete-duplicates
-     (map package->specification
-          (package-closure packages))))
+    (sort
+     (delete-duplicates
+      (map package->specification
+           (package-closure packages)))
+     string<))
 
   (format #t "Packages: ~d\n ~{ ~a~}\n"
           (length packages)
-          (map package->specification packages))
+          (sort
+           (map package->specification packages)
+           string<))
   (format #t "Package inputs: ~d packages\n ~{ ~a~}\n"
           (length inputs)
           inputs)
