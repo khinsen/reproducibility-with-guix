@@ -1,7 +1,7 @@
 #+TITLE: Reproducible computations with Guix
 #+STARTUP: inlineimages
 
-* Dependencies: what it takes to run a program
+
 This post is about reproducible computations, so let's start with a computation. A short, though rather uninteresting, C program is a good starting point. It computes π in three different ways:
 #+begin_src c :tangle pi.c :eval no
 #include <math.h>
@@ -9,8 +9,8 @@ This post is about reproducible computations, so let's start with a computation.
 
 int main()
 {
-    printf( "M_PI: %.10lf\n", M_PI);
-    printf( "4 * atan(1.): %.10lf\n", 4.*atan(1.));
+    printf( "M_PI                         : %.10lf\n", M_PI);
+    printf( "4 * atan(1.)                 : %.10lf\n", 4.*atan(1.));
     printf( "Leibniz' formula (four terms): %.10lf\n", 4.*(1.-1./3.+1./5.-1./7.));
     return 0;
 }
@@ -20,6 +20,7 @@ This program uses no random element, such as a random number generator or parall
 
 My goal is to explain why deterministic programs often fail to be reproducible, and what it takes to fix this. The short answer to that question is "use Guix", but even though Guix provides excellent support for reproducibility, you still have to use it correctly, and that requires some understanding of what's going on. The explanation I will give is rather detailed, to the point of discussing parts of the Guile API of Guix. You should be able to follow the reasoning without knowing Guile though, you will just have to believe me that the scripts I will show do what I claim they do. And in the end, I will provide a ready-to-run Guile script that will let you explore package dependencies right from the shell.
 
+* Dependencies: what it takes to run a program
 One keyword in discussions of reproducibility is "dependencies". I will revisit the exact meaning of this term later, but to get started, I will define it loosely as "any software package required to run a program". Running the π computation shown above is normally done using something like
 #+begin_src sh :exports code :eval no
 gcc pi.c -o pi
@@ -27,6 +28,7 @@ gcc pi.c -o pi
 #+end_src
 C programmers know that =gcc= is a C compiler, so that's one obvious dependency for running our little program. But is a C compiler enough? That question is surprisingly difficult to answer in practice. Your computer is loaded with tons of software (otherwise it wouldn't be very useful), and you don't really know what happens behind the scenes when you run =gcc= or =pi=.
 
+** Container is good
 A major element of reproducibility support in Guix is the possibility to run programs in well-defined environments that contain exactly the software packages you request, and no more. So if your program runs in an environment that contains only a C compiler, you can be sure it has no other dependencies. Let's create such an environment:
 #+begin_src sh :session C-compiler :results output :exports both
 guix environment --container --ad-hoc gcc-toolchain
@@ -36,7 +38,7 @@ guix environment --container --ad-hoc gcc-toolchain
 
 The option =--container= ensures the best possible isolation from the standard environment that your system installation and user account provide for day-to-day work. This environment contains nothing but a C compiler and a shell (which you need to type in commands), and has access to no other files than those in the current directory.
 
-Side note: the option =--container= requires support from the Linux kernel that is not available on all systems. If it doesn't work for you, use =--pure= instead. It provides a less isolated environment, but it is usually more than good enough.
+Side note: the option =--container= requires support from the Linux kernel that is not available on all systems. By default, it is not turned on for unprivileged users so as =root= you need to run =echo 1 > /proc/sys/kernel/unprivileged_userns_clone=. If it doesn't work for you, use =--pure= instead. It provides a less isolated environment, but it is usually more than good enough.
 
 The above command leaves me in a shell inside my environment, where I can now compile and run my little program:
 #+begin_src sh :session C-compiler :results output :exports both
@@ -61,6 +63,7 @@ guix environment --container --ad-hoc gcc-toolchain -- ./pi
 : 4 * atan(1.): 3.1415926536
 : Leibniz' formula (four terms): 2.8952380952
 
+** Let open the dependencies hell
 Now that we know that our only dependency is =gcc-toolchain=, let's look at it in more detail:
 
 #+begin_src sh :results output :exports both
@@ -182,9 +185,12 @@ guix environment --container --ad-hoc gcc-toolchain -- gcc --version
 : 
 
 The output of =guix show= contains a line about dependencies. These are the dependencies of our dependency, and you may already have guessed that they will have dependencies as well. That's why reproducibility is such a difficult job in practice! The dependencies of =gcc-toolchain@9.2.0= are:
-#+begin_example
-binutils@2.32 gcc@9.2.0 glibc@2.29 ld-wrapper@0
-#+end_example
+#+begin_src sh :results output :exports both
+guix show gcc-toolchain@9.2.0 | recsel -P dependencies
+#+end_src
+
+#+RESULTS:
+: binutils@2.32 gcc@9.2.0 glibc@2.29 ld-wrapper@0
 
 To dig deeper, we can try feeding these dependencies to =guix show=, one by one, in order to learn more about them:
 #+begin_src sh :results output :exports both
@@ -257,7 +263,7 @@ To see how all these concepts fit together, let's look at an example of a packag
 of an X11 screen.")
   (license license:x11))
 #+end_src
-The package definition starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs= supply the information required for /building/ the package, which is what creates its outputs. The remaining items are documentation for human consumption, important for other reasons but not for reproducibility, so I won't say any more about them.
+The [[http://guix.gnu.org/manual/devel/en/html_node/Defining-Packages.html#Defining-Packages][package definition]] starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs= supply the information required for /building/ the package, which is what creates its outputs. The remaining items are documentation for human consumption, important for other reasons but not for reproducibility, so I won't say any more about them. (See [[http://guix.gnu.org/cookbook/en/html_node/Packaging.html#Packaging][Package tutorial]] if you want to define your own package.)
 
 The example package definition has =native-inputs= in addition to "plain" =inputs=. There's a third variant, =propagated-inputs=, but =xmag= doesn't have any. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now on. Another omission I will make is the possibility to define several outputs for a package. This is done for particularly big packages, in order to reduce the footprint of installations, but for the purposes of reproducibility, it's OK to treat all outputs of a package a single unit.
 
@@ -277,7 +283,7 @@ Building a package can be considered a generalization of compiling a program. We
 
 * Package exploration in Guile
 
-Guile uses a record type called =<package>= to represent packages, which is defined in module =(guix packages)=. There is also a module =(gnu packages)=, which contains the actual package definitions - be careful not to confuse the two (as I always do). Here is a simple Guile script that shows some package information, much like the =guix show= command that I used earlier:
+Guile uses a record type called [[https://git.savannah.gnu.org/cgit/guix.git/tree/guix/packages.scm#n249][=<package>=]] to represent packages, which is defined in module =(guix packages)=. There is also a module [[https://git.savannah.gnu.org/cgit/guix.git/tree/gnu/packages][=(gnu packages)=]], which contains the actual package definitions - be careful not to confuse the two (as I always do). Here is a simple Guile script that shows some package information, much like the =guix show= command that I used earlier:
 #+begin_src scheme :results output
 (use-modules (guix packages)
              (gnu packages)) 
@@ -285,9 +291,9 @@ Guile uses a record type called =<package>= to represent packages, which is defi
 (define gcc-toolchain
   (specification->package "gcc-toolchain"))
 
-(format #t "Name: ~a\n" (package-name gcc-toolchain))
+(format #t "Name   : ~a\n" (package-name gcc-toolchain))
 (format #t "Version: ~a\n" (package-version gcc-toolchain))
-(format #t "Inputs: ~a\n" (package-direct-inputs gcc-toolchain))
+(format #t "Inputs : ~a\n" (package-direct-inputs gcc-toolchain))
 #+end_src
 
 #+RESULTS:
@@ -320,7 +326,7 @@ The inputs are not shown in a particularly nice form, so let's write two Guile f
 
 (format #t "Package: ~a\n"
         (package->specification gcc-toolchain))
-(format #t "Inputs: ~a\n"
+(format #t "Inputs : ~a\n"
         (map input->specification (package-direct-inputs gcc-toolchain)))
 #+end_src
 
@@ -356,13 +362,28 @@ That looks much better. As you can see from the code, a list of inputs is a bit 
 
 (format #t "Package: ~a\n"
         (package->specification gcc-toolchain))
-(format #t "Inputs: ~a\n"
+(format #t "Inputs : ~a\n"
         (unique-inputs (package-direct-inputs gcc-toolchain)))
+(format #t "Internals: ~a\n"
+        (map car (package-direct-inputs gcc-toolchain)))
+(display "\n")
+
+(define glibc
+  (specification->package "glibc"))
+
+(format #t "Name     : ~a\n"
+        (package-name glibc))
+(format #t "Outputs  : ~a\n"
+        (package-outputs glibc))
 #+end_src
 
 #+RESULTS:
-: Package: gcc-toolchain@9.2.0
-: Inputs: (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29)
+: Package  : gcc-toolchain@8.3.0
+: Inputs   : (gcc@8.3.0 ld-wrapper@0 binutils@2.31.1 glibc@2.28 glibc@2.28 glibc@2.28)
+: Internals: (gcc ld-wrapper binutils libc libc-debug libc-static)
+:
+: Name     : glibc
+: Outputs  : (out debug static)
 
 * Dependencies
 
@@ -376,12 +397,12 @@ and in a next step into
 [[file:data-program-environment.png]]
 We can go on and divide the environment into operating system, development tools, and application software, for example, but the further we go in decomposing the input to a computation, the more arbitrary it gets.
 
-From this point of view, a software's dependencies consist of everything required to run it in addition to its source code. For a Guix package, the dependencies are thus
+From this point of view, a software's dependencies consist of everything required to run it in addition to its source code. For a Guix package, the dependencies are thus,
 - its inputs
 - the build system arguments
 - the build system itself
-- Guix
-- the GNU/Linux operating system
+- Guix (commit)
+- the GNU/Linux operating system (kernel).
 
 In the following, I will not mention the last two items any more, because they are a common dependency of all Guix packages, but it's important not to forget about them. A change in Guix or in GNU/Linux can actually make a computation non-reproducible, although in practice that happens very rarely. Moreover, Guix is actually designed to run older versions of itself, as we will see later.
 
@@ -421,22 +442,22 @@ Before Guix can build a package, it must gather all the required ingredients, an
 (define hello
   (specification->package "hello"))
 
-(format #t "Package: ~a\n"
+(format #t "Package       : ~a\n"
         (package->specification hello))
 (format #t "Package inputs: ~a\n"
         (unique-inputs (package-direct-inputs hello)))
-(format #t "Build inputs: ~a\n"
+(format #t "Build inputs  : ~a\n"
         (unique-inputs
          (bag-direct-inputs
           (package->bag hello))))
 #+end_src
 
 #+RESULTS:
-: Package: hello@2.10
+: Package       : hello@2.10
 : Package inputs: ()
-: Build inputs: ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
+: Build inputs  : ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
 
-I have used a different example, =hello=, because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, =hello= (a short demo program printing "Hello, world" in the language of the system installation), is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
+I have used a different example, [[https://git.savannah.gnu.org/cgit/guix.git/tree/gnu/packages/base.scm#n72][=hello=]], because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, [[https://hpc.guix.info/package/hello][=hello=]] (a short demo program printing "Hello, world" in the language of the system installation), is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
 
 If you compare this script to the previous one that printed only the package inputs, you will notice two major new features. In =input->specification=, there is an additional case for the source code reference. And in the last statement, =package->bag= constructs a bag from the package, before =bag-direct-inputs= is called to get that bag's input list.
 
@@ -446,6 +467,7 @@ I have mentioned before that one package's inputs are other packages' outputs, b
 
 Remember the short C program computing π from the beginning of this post? Running that program is only the last step in a long series of computations. Before you can run =pi=, you must compile =pi.c=. That requires the package =gcc-toolchain=, which must first be built. And before it can be built, its inputs must be built. And so on. If you want the output of =pi= to be reproducible, *the whole chain of computations must be reproducible*, because each step can have an impact on the results produced by =pi=.
 
+** Close of bag
 So... where does this chain start? Few people write machine code these days, so almost all software requires some compiler or interpreter. And that means that for every package, there are other packages that must be built first. The question of how to get this chain started is known as the bootstrapping problem. A rough summary of the solution is that the chain starts on somebody else's computer, which creates a bootstrap seed, an ideally small package that is downloaded in precompiled form. See [[https://guix.gnu.org/blog/2019/guix-reduces-bootstrap-seed-by-50/][this post by Jan Nieuwenhuizen]] for details of this procedure. The bootstrap seed is not the real start of the chain, but as long as we can retrieve an identical copy at a later time, that's good enough for reproducibility. In fact, the reason for requiring the bootstrap seed to be small is not reproducibility, but inspectability: it should be possible to audit the seed for bugs and malware, even in the absence of source code.
 
 Now we are finally ready for the ultimate step in dependency analysis: identifying all packages on which a computation depends, right up to the bootstrap seed. The starting point is the list of direct inputs of the bag derived from a package, which we looked at in the previous script. For each package in that list, we must apply this same procedure, recursively. We don't have to write this code ourselves, because the function =package-closure= in Guix does that job. If you have a basic knowledge of Scheme, you should be able to understand its [[https://git.savannah.gnu.org/cgit/guix.git/tree/guix/packages.scm#n817][implementation]] now. Let's add it to our dependency analysis code:
@@ -475,31 +497,37 @@ Now we are finally ready for the ultimate step in dependency analysis: identifyi
   (delete-duplicates
    (map input->specification inputs)))
 
+(define (length-and-list lists)
+  (list (length lists) lists))
+
 (define hello
   (specification->package "hello"))
 
-(format #t "Package: ~a\n"
+(format #t "Package        : ~a\n"
         (package->specification hello))
-(format #t "Package inputs: ~a\n"
-        (unique-inputs (package-direct-inputs hello)))
-(format #t "Build inputs: ~a\n"
-        (unique-inputs
-         (bag-direct-inputs
-          (package->bag hello))))
+(format #t "Package inputs : ~a\n"
+        (length-and-list (unique-inputs (package-direct-inputs hello))))
+(format #t "Build inputs   : ~a\n"
+        (length-and-list
+         (unique-inputs
+          (bag-direct-inputs
+           (package->bag hello)))))
 (format #t "Package closure: ~a\n"
-        (delete-duplicates
-         (map package->specification
-              (package-closure (list hello)))))
+        (length-and-list
+         (delete-duplicates
+          (map package->specification
+               (package-closure (list hello))))))
 #+end_src
 
 #+RESULTS:
-: Package: hello@2.10
-: Package inputs: ()
-: Build inputs: ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
-: Package closure: (m4@1.4.18 libatomic-ops@7.6.10 gmp@6.1.2 libgc@7.6.12 libltdl@2.4.6 libunistring@0.9.10 libffi@3.2.1 pkg-config@0.29.2 guile@2.2.6 libsigsegv@2.12 lzip@1.21 ed@1.15 perl@5.30.0 guile-bootstrap@2.0 zlib@1.2.11 xz@5.2.4 ncurses@6.1-20190609 libxml2@2.9.9 attr@2.4.48 gettext-minimal@0.20.1 gcc-cross-boot0-wrapped@7.4.0 libstdc++@7.4.0 ld-wrapper-boot3@0 bootstrap-binaries@0 ld-wrapper-boot0@0 flex@2.6.4 glibc-intermediate@2.29 libstdc++-boot0@4.9.4 expat@2.2.7 gcc-mesboot1-wrapper@4.7.4 mesboot-headers@0.19 gcc-core-mesboot@2.95.3 bootstrap-mes@0 bootstrap-mescc-tools@0.5.2 tcc-boot0@0.9.26-6.c004e9a mes-boot@0.19 tcc-boot@0.9.27 make-mesboot0@3.80 gcc-mesboot0@2.95.3 binutils-mesboot0@2.20.1a make-mesboot@3.82 diffutils-mesboot@2.7 gcc-mesboot1@4.7.4 glibc-headers-mesboot@2.16.0 glibc-mesboot0@2.2.5 binutils-mesboot@2.20.1a linux-libre-headers@4.19.56 linux-libre-headers-bootstrap@0 gcc-mesboot@4.9.4 glibc-mesboot@2.16.0 gcc-cross-boot0@7.4.0 bash-static@5.0.7 gettext-boot0@0.19.8.1 python-minimal@3.5.7 perl-boot0@5.30.0 texinfo@6.6 bison@3.4.1 gzip@1.10 libcap@2.27 acl@2.2.53 glibc-utf8-locales@2.29 gcc-mesboot-wrapper@4.9.4 file-boot0@5.33 findutils-boot0@4.6.0 diffutils-boot0@3.7 make-boot0@4.2.1 binutils-cross-boot0@2.32 glibc@2.29 gcc@7.4.0 binutils@2.32 ld-wrapper@0 bash-minimal@5.0.7 make@4.2.1 coreutils@8.31 grep@3.3 sed@4.7 gawk@5.0.1 findutils@4.6.0 patch@2.7.6 diffutils@3.7 file@5.33 bzip2@1.0.6 tar@1.32 hello@2.10)
+: Package        : hello@2.10
+: Package inputs : (0 ())
+: Build inputs   : (20 ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.30 gzip@1.9 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.6 patch@2.7.6 findutils@4.6.0 gawk@4.2.1 sed@4.5 grep@3.1 coreutils@8.30 make@4.2.1 bash-minimal@4.4.23 ld-wrapper@0 binutils@2.31.1 gcc@5.5.0 glibc@2.28 glibc-utf8-locales@2.28))
+: Package closure: (62 (gzip@1.9 libstdc++-boot0@4.9.4 gcc-cross-boot0@5.5.0 m4@1.4.18 linux-libre-headers@4.14.67 gettext-boot0@0.19.8.1 bison@3.0.5 guile-bootstrap@2.0 glibc-intermediate@2.28 gcc-cross-boot0-wrapped@5.5.0 perl-boot0@5.28.0 bootstrap-binaries@0 file-boot0@5.33 findutils-boot0@4.6.0 diffutils-boot0@3.6 make-boot0@4.2.1 binutils-cross-boot0@2.31.1 ld-wrapper-boot0@0 zlib@1.2.11 libstdc++@5.5.0 ld-wrapper-boot3@0 bash-static@4.4.23 texinfo@6.5 libatomic-ops@7.6.6 pkg-config@0.29.2 gmp@6.1.2 libgc@7.6.6 libltdl@2.4.6 libunistring@0.9.10 libffi@3.2.1 guile@2.2.4 expat@2.2.6 perl@5.28.0 gettext-minimal@0.19.8.1 attr@2.4.47 libcap@2.25 acl@2.2.52 binutils-bootstrap@0 gcc-bootstrap@0 glibc-bootstrap@0 libsigsegv@2.12 lzip@1.20 ed@1.14.2 binutils@2.31.1 glibc@2.28 gcc@5.5.0 bash-minimal@4.4.23 glibc-utf8-locales@2.28 grep@3.1 coreutils@8.30 ld-wrapper@0 make@4.2.1 sed@4.5 gawk@4.2.1 findutils@4.6.0 patch@2.7.6 diffutils@3.6 file@5.33 xz@5.2.4 bzip2@1.0.6 tar@1.30 hello@2.10))
 
 That's 84 packages, just for printing "Hello, world!". As promised, it includes the boostrap seed, called =bootstrap-binaries=. It may be more surprising to see Perl and Python in the dependency list of what is a pure C program. The explanation is that the build process of =gcc= and =glibc= contains Perl and Python code. Considering that both Perl and Python are written in C and use =glibc=, this hints at why bootstrapping is a hard problem!
 
+** Ready to analyse yourself?
 As promised, here is a [[file:show-dependencies.scm][Guile script]] that you can download and run from the command line to do dependency analyses much like the ones I have shown. Just give the packages whose combined list of dependencies you want to analyze. For example:
 #+begin_src sh :results output :exports both
 ./show-dependencies.scm hello
@@ -531,7 +559,7 @@ I have explained dependencies along these lines in a few seminars. There's one q
 
 Most package managers, such as Debian's =apt= or the multi-platform =conda=, take a different point of view. They define the dependencies of a program as all packages that need to be loaded into memory in order to run it. They thus exclude the software that is required to /build/ the program and its run-time dependencies, but can then be discarded. Whereas Guix' definition errs on the safe side (its dependency list is often longer than necessary but never too short), the run-time-only definition is both too vast and too restrictive. Many run-time dependencies don't have an impact on most programs' results, but some build-time dependencies do.
 
-One important case where build-time dependencies matter is floating-point computations. For historical reasons, they are surrounded by an aura of vagueness and imprecision, which goes back to its early days, when many details were poorly understood and implementations varied a lot. Today, all computers used for scientific computing respect the [[https://en.wikipedia.org/wiki/IEEE_754][IEEE 754 standard]] that precisely defines how floating-point numbers are represented in memory and what the result of each arithmetic operation must be. Floating-point arithmetic is thus perfectly deterministic and even perfectly portable between machines, if expressed in terms of the operations defined by the standard. However, high-level languages such as C or Fortran do not allow programmers to do that. Its designers assume (probably correctly) that most programmers do not want to deal with the intricate details of rounding. Therefore they provide only a simplified interface to the arithmetic operations of IEE 754, which incidentally also provides more liberty for code optimization to compiler writers. The net result is that the complete specification of a program's results is its source code /plus the compiler and the compilation options/. You thus /can/ get reproducible floating-point results if you include all compilation steps into the perimeter of your computation, at least for code running on a single processor. Parallel computing is a different story: it involves voluntarily giving up reproducibility in exchange for speed. Reproducibility then becomes a best-effort approach of limiting the collateral damage done by optimization through the clever design of algorithms.
+One important case where build-time dependencies matter is floating-point computations. For historical reasons, they are surrounded by an aura of vagueness and imprecision, which goes back to its early days, when many details were poorly understood and implementations varied a lot. Today, all computers used for scientific computing respect the [[https://en.wikipedia.org/wiki/IEEE_754][IEEE 754 standard]] that precisely defines how floating-point numbers are represented in memory and what the result of each arithmetic operation must be. Floating-point arithmetic is thus perfectly deterministic and even perfectly portable between machines, if expressed in terms of the operations defined by the standard. However, high-level languages such as C or Fortran do not allow programmers to do that. Its designers assume (probably correctly) that most programmers do not want to deal with the intricate details of rounding. Therefore they provide only a simplified interface to the arithmetic operations of IEEE 754, which incidentally also provides more liberty for code optimization to compiler writers. The net result is that the complete specification of a program's results is its source code /plus the compiler and the compilation options/. You thus /can/ get reproducible floating-point results if you include all compilation steps into the perimeter of your computation, at least for code running on a single processor. Parallel computing is a different story: it involves voluntarily giving up reproducibility in exchange for speed. Reproducibility then becomes a best-effort approach of limiting the collateral damage done by optimization through the clever design of algorithms.
 
 * Reproducing a reproducible computation
 
@@ -600,5 +628,18 @@ gcc pi.c -o pi
 : pi = 3.1415926536
 : 4 * atan(1.): 3.1415926536
 : Leibniz' formula (four terms): 2.8952380952
+
+Last, if your colleague does not use yet Guix, then let pack (plain tarball, Docker or Singularity containers) and provide the image. For example,
+#+begin_src sh :results none :exports code
+guix pack            \
+     -f docker       \
+     -C none         \
+     -S /bin=bin     \
+     -S /lib=lib     \
+     -S /share=share \
+     -S /etc=etc     \
+     gcc-toolchain
+#+end_src
+and knowing the Guix commit (channel), you will be able in the future to reproduce bit-to-bit this container using =guix time-machine=.
 
 And now... congratulations for having survived to the end of this long journey! May all your computations be reproducible, with Guix.
