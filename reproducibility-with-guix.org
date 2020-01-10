@@ -28,6 +28,7 @@ gcc pi.c -o pi
 #+end_src
 C programmers know that =gcc= is a C compiler, so that's one obvious dependency for running our little program. But is a C compiler enough? That question is surprisingly difficult to answer in practice. Your computer is loaded with tons of software (otherwise it wouldn't be very useful), and you don't really know what happens behind the scenes when you run =gcc= or =pi=.
 
+** Containers are good
 A major element of reproducibility support in Guix is the possibility to run programs in well-defined environments that contain exactly the software packages you request, and no more. So if your program runs in an environment that contains only a C compiler, you can be sure it has no other dependencies. Let's create such an environment:
 #+begin_src sh :session C-compiler :results output :exports both
 guix environment --container --ad-hoc gcc-toolchain
@@ -37,7 +38,7 @@ guix environment --container --ad-hoc gcc-toolchain
 
 The option =--container= ensures the best possible isolation from the standard environment that your system installation and user account provide for day-to-day work. This environment contains nothing but a C compiler and a shell (which you need to type in commands), and has access to no other files than those in the current directory.
 
-Side note: the option =--container= requires support from the Linux kernel that is not available on all systems. If it doesn't work for you, use =--pure= instead. It provides a less isolated environment, but it is usually more than good enough.
+If the term "container" makes you think of Docker, note that this is something different. Note also that the option =--container= requires support from the Linux kernel, which may not be present on your system, or may be disabled by default. Finally, note that by default, a containerized environment has no network access, which may be a problem. If for whatever reason you cannot use =--container=, use =--pure= instead. This yields a less isolated environment, but it is usually good enough. For a more detailed discussion of these options, see the [[https://guix.gnu.org/manual/en/guix.html#Invoking-guix-environment][Guix manual]].
 
 The above command leaves me in a shell inside my environment, where I can now compile and run my little program:
 #+begin_src sh :session C-compiler :results output :exports both
