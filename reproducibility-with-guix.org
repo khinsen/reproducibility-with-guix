@@ -1,7 +1,7 @@
 #+TITLE: Reproducible computations with Guix
 #+STARTUP: inlineimages
 
-* Dependencies: what it takes to run a program
+
 This post is about reproducible computations, so let's start with a computation. A short, though rather uninteresting, C program is a good starting point. It computes π in three different ways:
 #+begin_src c :tangle pi.c :eval no
 #include <math.h>
@@ -9,8 +9,8 @@ This post is about reproducible computations, so let's start with a computation.
 
 int main()
 {
-    printf( "M_PI: %.10lf\n", M_PI);
-    printf( "4 * atan(1.): %.10lf\n", 4.*atan(1.));
+    printf( "M_PI                         : %.10lf\n", M_PI);
+    printf( "4 * atan(1.)                 : %.10lf\n", 4.*atan(1.));
     printf( "Leibniz' formula (four terms): %.10lf\n", 4.*(1.-1./3.+1./5.-1./7.));
     return 0;
 }
@@ -20,6 +20,7 @@ This program uses no random element, such as a random number generator or parall
 
 My goal is to explain why deterministic programs often fail to be reproducible, and what it takes to fix this. The short answer to that question is "use Guix", but even though Guix provides excellent support for reproducibility, you still have to use it correctly, and that requires some understanding of what's going on. The explanation I will give is rather detailed, to the point of discussing parts of the Guile API of Guix. You should be able to follow the reasoning without knowing Guile though, you will just have to believe me that the scripts I will show do what I claim they do. And in the end, I will provide a ready-to-run Guile script that will let you explore package dependencies right from the shell.
 
+* Dependencies: what it takes to run a program
 One keyword in discussions of reproducibility is "dependencies". I will revisit the exact meaning of this term later, but to get started, I will define it loosely as "any software package required to run a program". Running the π computation shown above is normally done using something like
 #+begin_src sh :exports code :eval no
 gcc pi.c -o pi
@@ -182,9 +183,12 @@ guix environment --container --ad-hoc gcc-toolchain -- gcc --version
 : 
 
 The output of =guix show= contains a line about dependencies. These are the dependencies of our dependency, and you may already have guessed that they will have dependencies as well. That's why reproducibility is such a difficult job in practice! The dependencies of =gcc-toolchain@9.2.0= are:
-#+begin_example
-binutils@2.32 gcc@9.2.0 glibc@2.29 ld-wrapper@0
-#+end_example
+#+begin_src sh :results output :exports both
+guix show gcc-toolchain@9.2.0 | recsel -P dependencies
+#+end_src
+
+#+RESULTS:
+: binutils@2.32 gcc@9.2.0 glibc@2.29 ld-wrapper@0
 
 To dig deeper, we can try feeding these dependencies to =guix show=, one by one, in order to learn more about them:
 #+begin_src sh :results output :exports both
@@ -257,7 +261,7 @@ To see how all these concepts fit together, let's look at an example of a packag
 of an X11 screen.")
   (license license:x11))
 #+end_src
-The package definition starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs= supply the information required for /building/ the package, which is what creates its outputs. The remaining items are documentation for human consumption, important for other reasons but not for reproducibility, so I won't say any more about them.
+The [[http://guix.gnu.org/manual/devel/en/html_node/Defining-Packages.html#Defining-Packages][package definition]] starts with the name and version information you expected. Next comes =source=, which says how to obtain the source code and from where. It also provides a hash that allows to check the integrity of the downloaded files. The next four items, =build-system=, =arguments=, =inputs=, and =native-inputs= supply the information required for /building/ the package, which is what creates its outputs. The remaining items are documentation for human consumption, important for other reasons but not for reproducibility, so I won't say any more about them. (See this [[http://guix.gnu.org/cookbook/en/html_node/Packaging.html#Packaging][packaging tutorial]] if you want to define your own package.)
 
 The example package definition has =native-inputs= in addition to "plain" =inputs=. There's a third variant, =propagated-inputs=, but =xmag= doesn't have any. The differences between these variants don't matter for my topic, so I will just refer to "inputs" from now on. Another omission I will make is the possibility to define several outputs for a package. This is done for particularly big packages, in order to reduce the footprint of installations, but for the purposes of reproducibility, it's OK to treat all outputs of a package a single unit.
 
@@ -277,7 +281,7 @@ Building a package can be considered a generalization of compiling a program. We
 
 * Package exploration in Guile
 
-Guile uses a record type called =<package>= to represent packages, which is defined in module =(guix packages)=. There is also a module =(gnu packages)=, which contains the actual package definitions - be careful not to confuse the two (as I always do). Here is a simple Guile script that shows some package information, much like the =guix show= command that I used earlier:
+Guile uses a record type called [[https://git.savannah.gnu.org/cgit/guix.git/tree/guix/packages.scm#n249][=<package>=]] to represent packages, which is defined in module =(guix packages)=. There is also a module [[https://git.savannah.gnu.org/cgit/guix.git/tree/gnu/packages][=(gnu packages)=]], which contains the actual package definitions - be careful not to confuse the two (as I always do). Here is a simple Guile script that shows some package information, much like the =guix show= command that I used earlier:
 #+begin_src scheme :results output
 (use-modules (guix packages)
              (gnu packages)) 
@@ -285,9 +289,9 @@ Guile uses a record type called =<package>= to represent packages, which is defi
 (define gcc-toolchain
   (specification->package "gcc-toolchain"))
 
-(format #t "Name: ~a\n" (package-name gcc-toolchain))
+(format #t "Name   : ~a\n" (package-name gcc-toolchain))
 (format #t "Version: ~a\n" (package-version gcc-toolchain))
-(format #t "Inputs: ~a\n" (package-direct-inputs gcc-toolchain))
+(format #t "Inputs : ~a\n" (package-direct-inputs gcc-toolchain))
 #+end_src
 
 #+RESULTS:
@@ -320,7 +324,7 @@ The inputs are not shown in a particularly nice form, so let's write two Guile f
 
 (format #t "Package: ~a\n"
         (package->specification gcc-toolchain))
-(format #t "Inputs: ~a\n"
+(format #t "Inputs : ~a\n"
         (map input->specification (package-direct-inputs gcc-toolchain)))
 #+end_src
 
@@ -376,12 +380,12 @@ and in a next step into
 [[file:data-program-environment.png]]
 We can go on and divide the environment into operating system, development tools, and application software, for example, but the further we go in decomposing the input to a computation, the more arbitrary it gets.
 
-From this point of view, a software's dependencies consist of everything required to run it in addition to its source code. For a Guix package, the dependencies are thus
+From this point of view, a software's dependencies consist of everything required to run it in addition to its source code. For a Guix package, the dependencies are thus,
 - its inputs
 - the build system arguments
 - the build system itself
-- Guix
-- the GNU/Linux operating system
+- Guix (which is a piece of software as well)
+- the GNU/Linux operating system (kernel, file system, etc.).
 
 In the following, I will not mention the last two items any more, because they are a common dependency of all Guix packages, but it's important not to forget about them. A change in Guix or in GNU/Linux can actually make a computation non-reproducible, although in practice that happens very rarely. Moreover, Guix is actually designed to run older versions of itself, as we will see later.
 
@@ -436,7 +440,7 @@ Before Guix can build a package, it must gather all the required ingredients, an
 : Package inputs: ()
 : Build inputs: ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
 
-I have used a different example, =hello=, because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, =hello= (a short demo program printing "Hello, world" in the language of the system installation), is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
+I have used a different example, [[https://git.savannah.gnu.org/cgit/guix.git/tree/gnu/packages/base.scm#n72][=hello=]], because for =gcc-toolchain=, there is no difference between package inputs and build inputs (check for yourself if you want!) My new example, [[https://hpc.guix.info/package/hello][=hello=]] (a short demo program printing "Hello, world" in the language of the system installation), is interesting because it has no package inputs at all. All the build inputs except for the source code have thus been contributed by the build system.
 
 If you compare this script to the previous one that printed only the package inputs, you will notice two major new features. In =input->specification=, there is an additional case for the source code reference. And in the last statement, =package->bag= constructs a bag from the package, before =bag-direct-inputs= is called to get that bag's input list.
 
@@ -531,7 +535,7 @@ I have explained dependencies along these lines in a few seminars. There's one q
 
 Most package managers, such as Debian's =apt= or the multi-platform =conda=, take a different point of view. They define the dependencies of a program as all packages that need to be loaded into memory in order to run it. They thus exclude the software that is required to /build/ the program and its run-time dependencies, but can then be discarded. Whereas Guix' definition errs on the safe side (its dependency list is often longer than necessary but never too short), the run-time-only definition is both too vast and too restrictive. Many run-time dependencies don't have an impact on most programs' results, but some build-time dependencies do.
 
-One important case where build-time dependencies matter is floating-point computations. For historical reasons, they are surrounded by an aura of vagueness and imprecision, which goes back to its early days, when many details were poorly understood and implementations varied a lot. Today, all computers used for scientific computing respect the [[https://en.wikipedia.org/wiki/IEEE_754][IEEE 754 standard]] that precisely defines how floating-point numbers are represented in memory and what the result of each arithmetic operation must be. Floating-point arithmetic is thus perfectly deterministic and even perfectly portable between machines, if expressed in terms of the operations defined by the standard. However, high-level languages such as C or Fortran do not allow programmers to do that. Its designers assume (probably correctly) that most programmers do not want to deal with the intricate details of rounding. Therefore they provide only a simplified interface to the arithmetic operations of IEE 754, which incidentally also provides more liberty for code optimization to compiler writers. The net result is that the complete specification of a program's results is its source code /plus the compiler and the compilation options/. You thus /can/ get reproducible floating-point results if you include all compilation steps into the perimeter of your computation, at least for code running on a single processor. Parallel computing is a different story: it involves voluntarily giving up reproducibility in exchange for speed. Reproducibility then becomes a best-effort approach of limiting the collateral damage done by optimization through the clever design of algorithms.
+One important case where build-time dependencies matter is floating-point computations. For historical reasons, they are surrounded by an aura of vagueness and imprecision, which goes back to its early days, when many details were poorly understood and implementations varied a lot. Today, all computers used for scientific computing respect the [[https://en.wikipedia.org/wiki/IEEE_754][IEEE 754 standard]] that precisely defines how floating-point numbers are represented in memory and what the result of each arithmetic operation must be. Floating-point arithmetic is thus perfectly deterministic and even perfectly portable between machines, if expressed in terms of the operations defined by the standard. However, high-level languages such as C or Fortran do not allow programmers to do that. Its designers assume (probably correctly) that most programmers do not want to deal with the intricate details of rounding. Therefore they provide only a simplified interface to the arithmetic operations of IEEE 754, which incidentally also provides more liberty for code optimization to compiler writers. The net result is that the complete specification of a program's results is its source code /plus the compiler and the compilation options/. You thus /can/ get reproducible floating-point results if you include all compilation steps into the perimeter of your computation, at least for code running on a single processor. Parallel computing is a different story: it involves voluntarily giving up reproducibility in exchange for speed. Reproducibility then becomes a best-effort approach of limiting the collateral damage done by optimization through the clever design of algorithms.
 
 * Reproducing a reproducible computation
 
@@ -600,5 +604,18 @@ gcc pi.c -o pi
 : pi = 3.1415926536
 : 4 * atan(1.): 3.1415926536
 : Leibniz' formula (four terms): 2.8952380952
+
+Last, if your colleagues do not use Guix yet, you can pack your reproducible software for use on other systems: as a tarball, or as a Docker or Singularity container image. For example:
+#+begin_src sh :results none :exports code
+guix pack            \
+     -f docker       \
+     -C none         \
+     -S /bin=bin     \
+     -S /lib=lib     \
+     -S /share=share \
+     -S /etc=etc     \
+     gcc-toolchain
+#+end_src
+and knowing the Guix commit (channel), you will be able in the future to reproduce bit-to-bit this container using =guix time-machine=.
 
 And now... congratulations for having survived to the end of this long journey! May all your computations be reproducible, with Guix.
