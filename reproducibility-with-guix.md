@@ -1,8 +1,14 @@
+title: Reproducible computations with Guix
+author: Konrad Hinsen
+tags: Reproducibility, Research
+date: 2020-1-14 12:00:00
+---
+
 This post is about reproducible computations, so let\'s start with a
 computation. A short, though rather uninteresting, C program is a good
 starting point. It computes π in three different ways:
 
-``` {.c tangle="pi.c" eval="no"}
+```c
 #include <math.h>
 #include <stdio.h>
 
@@ -44,7 +50,7 @@ will define it loosely as \"any software package required to run a
 program\". Running the π computation shown above is normally done using
 something like
 
-``` {.bash org-language="sh" exports="code" eval="no"}
+```sh
 gcc pi.c -o pi
 ./pi
 ```
@@ -65,7 +71,7 @@ software packages you request, and no more. So if your program runs in
 an environment that contains only a C compiler, you can be sure it has
 no other dependencies. Let\'s create such an environment:
 
-``` {.bash org-language="sh" session="C-compiler" results="output" exports="both"}
+```sh
 guix environment --container --ad-hoc gcc-toolchain
 ```
 
@@ -88,29 +94,30 @@ manual](https://guix.gnu.org/manual/en/guix.html#Invoking-guix-environment).
 The above command leaves me in a shell inside my environment, where I
 can now compile and run my little program:
 
-``` {.bash org-language="sh" session="C-compiler" results="output" exports="both"}
+```sh
 gcc pi.c -o pi
 ./pi
 ```
 
-``` {.example}
-
+```
 M_PI                         : 3.1415926536
 4 * atan(1.)                 : 3.1415926536
 Leibniz' formula (four terms): 2.8952380952
 ```
 
 It works! So now I can be sure that my program has a single dependency:
-the Guix package `gcc-toolchain`. Perfectionists who want to exclude the
-possibility that my program requires a shell could run each step in a
-separate container:
+the Guix package `gcc-toolchain`. I\'ll leave that special-environment shell
+by typing Ctrl-D, as otherwise the following examples won't work.
 
-``` {.bash org-language="sh" results="output" exports="both"}
+Perfectionists who want to exclude the possibility that my program
+requires a shell could run each step in a separate container:
+
+```sh
 guix environment --container --ad-hoc gcc-toolchain -- gcc pi.c -o pi
 guix environment --container --ad-hoc gcc-toolchain -- ./pi
 ```
 
-``` {.example}
+```
 M_PI                         : 3.1415926536
 4 * atan(1.)                 : 3.1415926536
 Leibniz' formula (four terms): 2.8952380952
@@ -122,11 +129,11 @@ Welcome to dependency hell!
 Now that we know that our only dependency is `gcc-toolchain`, let\'s
 look at it in more detail:
 
-``` {.bash org-language="sh" results="output" exports="both"}
+```sh
 guix show gcc-toolchain
 ```
 
-``` {.example}
+```
 name: gcc-toolchain
 version: 9.2.0
 outputs: out debug static
@@ -232,11 +239,11 @@ ask for a specific one, so what we got is the first one in this list,
 which is the one with the highest version number. Let\'s check that this
 is true:
 
-``` {.bash org-language="sh" results="output" exports="both"}
+```sh
 guix environment --container --ad-hoc gcc-toolchain -- gcc --version
 ```
 
-``` {.example}
+```
 gcc (GCC) 9.2.0
 Copyright (C) 2019 Free Software Foundation, Inc.
 This is free software; see the source for copying conditions.  There is NO
@@ -250,22 +257,22 @@ that they will have dependencies as well. That\'s why reproducibility is
 such a difficult job in practice! The dependencies of
 `gcc-toolchain@9.2.0` are:
 
-``` {.bash org-language="sh" results="output" exports="both"}
+```sh
 guix show gcc-toolchain@9.2.0 | recsel -P dependencies
 ```
 
-``` {.example}
+```
 binutils@2.32 gcc@9.2.0 glibc@2.29 ld-wrapper@0
 ```
 
 To dig deeper, we can try feeding these dependencies to `guix show`, one
 by one, in order to learn more about them:
 
-``` {.bash org-language="sh" results="output" exports="both"}
+```sh
 guix show binutils@2.32
 ```
 
-``` {.example}
+```
 name: binutils
 version: 2.32
 outputs: out
@@ -283,13 +290,11 @@ description: GNU Binutils is a collection of tools for working with binary
 
 ```
 
-``` {.bash org-language="sh" results="output" exports="both"}
-exec 2>&1
+```sh
 guix show gcc@9.2.0
-:
 ```
 
-``` {.example}
+```
 guix show: error: gcc@9.2.0: package not found
 ```
 
@@ -334,7 +339,7 @@ care much about it, but because its definition is short while showcasing
 all the features I want to explain. You can access it most easily by
 typing `guix edit xmag`. Here is what you will see:
 
-``` {.scheme eval="no"}
+```scheme
 (package
   (name "xmag")
   (version "1.0.6")
@@ -394,13 +399,26 @@ package): ![](guix-package.png)
 It may help to translate the Guix jargon to the vocabulary of C
 programming:
 
-  Guix package   C program
-  -------------- ------------------
-  source code    source code
-  inputs         libraries
-  arguments      compiler options
-  build system   compiler
-  output         executable
+<table>
+  <tr>
+    <th>Guix package</th>   <th>C program</th>
+  </tr>
+  <tr>
+    <td>source code</td>    <td>source code</td>
+  </tr>
+  <tr>
+    <td>inputs</td>         <td>libraries</td>
+  </tr>
+  <tr>
+    <td>arguments</td>      <td>compiler options</td>
+  </tr>
+  <tr>
+    <td>build system</td>   <td>compiler</td>
+  </tr>
+  <tr>
+    <td>output</td>         <td>executable</td>
+  </tr>
+</table>
 
 Building a package can be considered a generalization of compiling a
 program. We could in fact create a \"GCC build system\" for Guix that
@@ -423,7 +441,7 @@ confuse the two (as I always do). Here is a simple Guile script that
 shows some package information, much like the `guix show` command that I
 used earlier:
 
-``` {.scheme results="output"}
+```scheme
 (use-modules (guix packages)
              (gnu packages)) 
 
@@ -433,6 +451,12 @@ used earlier:
 (format #t "Name   : ~a\n" (package-name gcc-toolchain))
 (format #t "Version: ~a\n" (package-version gcc-toolchain))
 (format #t "Inputs : ~a\n" (package-direct-inputs gcc-toolchain))
+```
+
+```
+Name   : gcc-toolchain
+Version: 9.2.0
+Inputs : ((gcc #<package gcc@9.2.0 gnu/packages/gcc.scm:524 7fc2d76af160>) (ld-wrapper #<package ld-wrapper@0 gnu/packages/base.scm:505 7fc2d306f580>) (binutils #<package binutils@2.32 gnu/packages/commencement.scm:2187 7fc2d306fdc0>) (libc #<package glibc@2.29 gnu/packages/commencement.scm:2145 7fc2d306fe70>) (libc-debug #<package glibc@2.29 gnu/packages/commencement.scm:2145 7fc2d306fe70> debug) (libc-static #<package glibc@2.29 gnu/packages/commencement.scm:2145 7fc2d306fe70> static))
 ```
 
 This script first calls `specification->package` to look up the package
@@ -446,7 +470,7 @@ above, I don\'t care about the distinction here.
 The inputs are not shown in a particularly nice form, so let\'s write
 two Guile functions to improve it:
 
-``` {.scheme results="output"}
+```scheme
 (use-modules (guix packages)
              (gnu packages)
              (ice-9 match))
@@ -472,6 +496,11 @@ two Guile functions to improve it:
         (map input->specification (package-direct-inputs gcc-toolchain)))
 ```
 
+```
+Package: gcc-toolchain@9.2.0
+Inputs : (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29 glibc@2.29 glibc@2.29)
+```
+
 That looks much better. As you can see from the code, a list of inputs
 is a bit more than a list of packages. It is in fact a list of labelled
 *package outputs*. That also explains why we see `glibc` three times in
@@ -481,7 +510,7 @@ package references. Later on, we will deal with much longer input lists,
 so as a final cleanup step, let\'s show only unique package references
 from the list of inputs:
 
-``` {.scheme results="output"}
+```scheme
 (use-modules (guix packages)
              (gnu packages)
              (srfi srfi-1)
@@ -510,6 +539,11 @@ from the list of inputs:
         (package->specification gcc-toolchain))
 (format #t "Inputs : ~a\n"
         (unique-inputs (package-direct-inputs gcc-toolchain)))
+```
+
+```
+Package: gcc-toolchain@9.2.0
+Inputs : (gcc@9.2.0 ld-wrapper@0 binutils@2.32 glibc@2.29)
 ```
 
 Dependencies
@@ -583,7 +617,7 @@ ingredients, and that includes replacing the build system by the
 packages it represents. The resulting list of ingredients is called a
 `bag`, and we can access it using a Guile script:
 
-``` {.scheme results="output"}
+```scheme
 (use-modules (guix packages)
              (gnu packages)
              (srfi srfi-1)
@@ -619,6 +653,12 @@ packages it represents. The resulting list of ingredients is called a
         (unique-inputs
          (bag-direct-inputs
           (package->bag hello))))
+```
+
+```
+Package       : hello@2.10
+Package inputs: ()
+Build inputs  : ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29)
 ```
 
 I have used a different example,
@@ -695,7 +735,7 @@ now be able to understand
 [implementation](https://git.savannah.gnu.org/cgit/guix.git/tree/guix/packages.scm#n817)
 of this function. Let\'s add it to our dependency analysis code:
 
-``` {.scheme results="output"}
+```scheme
 (use-modules (guix packages)
              (gnu packages)
              (srfi srfi-1)
@@ -742,6 +782,13 @@ of this function. Let\'s add it to our dependency analysis code:
                (package-closure (list hello))))))
 ```
 
+```
+Package        : hello@2.10
+Package inputs : (0 ())
+Build inputs   : (20 ([source code from mirror://gnu/hello/hello-2.10.tar.gz] tar@1.32 gzip@1.10 bzip2@1.0.6 xz@5.2.4 file@5.33 diffutils@3.7 patch@2.7.6 findutils@4.6.0 gawk@5.0.1 sed@4.7 grep@3.3 coreutils@8.31 make@4.2.1 bash-minimal@5.0.7 ld-wrapper@0 binutils@2.32 gcc@7.4.0 glibc@2.29 glibc-utf8-locales@2.29))
+Package closure: (84 (m4@1.4.18 libatomic-ops@7.6.10 gmp@6.1.2 libgc@7.6.12 libltdl@2.4.6 libunistring@0.9.10 libffi@3.2.1 pkg-config@0.29.2 guile@2.2.6 libsigsegv@2.12 lzip@1.21 ed@1.15 perl@5.30.0 guile-bootstrap@2.0 zlib@1.2.11 xz@5.2.4 ncurses@6.1-20190609 libxml2@2.9.9 attr@2.4.48 gettext-minimal@0.20.1 gcc-cross-boot0-wrapped@7.4.0 libstdc++@7.4.0 ld-wrapper-boot3@0 bootstrap-binaries@0 ld-wrapper-boot0@0 flex@2.6.4 glibc-intermediate@2.29 libstdc++-boot0@4.9.4 expat@2.2.7 gcc-mesboot1-wrapper@4.7.4 mesboot-headers@0.19 gcc-core-mesboot@2.95.3 bootstrap-mes@0 bootstrap-mescc-tools@0.5.2 tcc-boot0@0.9.26-6.c004e9a mes-boot@0.19 tcc-boot@0.9.27 make-mesboot0@3.80 gcc-mesboot0@2.95.3 binutils-mesboot0@2.20.1a make-mesboot@3.82 diffutils-mesboot@2.7 gcc-mesboot1@4.7.4 glibc-headers-mesboot@2.16.0 glibc-mesboot0@2.2.5 binutils-mesboot@2.20.1a linux-libre-headers@4.19.56 linux-libre-headers-bootstrap@0 gcc-mesboot@4.9.4 glibc-mesboot@2.16.0 gcc-cross-boot0@7.4.0 bash-static@5.0.7 gettext-boot0@0.19.8.1 python-minimal@3.5.7 perl-boot0@5.30.0 texinfo@6.6 bison@3.4.1 gzip@1.10 libcap@2.27 acl@2.2.53 glibc-utf8-locales@2.29 gcc-mesboot-wrapper@4.9.4 file-boot0@5.33 findutils-boot0@4.6.0 diffutils-boot0@3.7 make-boot0@4.2.1 binutils-cross-boot0@2.32 glibc@2.29 gcc@7.4.0 binutils@2.32 ld-wrapper@0 bash-minimal@5.0.7 make@4.2.1 coreutils@8.31 grep@3.3 sed@4.7 gawk@5.0.1 findutils@4.6.0 patch@2.7.6 diffutils@3.7 file@5.33 bzip2@1.0.6 tar@1.32 hello@2.10))
+```
+
 That\'s 84 packages, just for printing \"Hello, world!\". As promised,
 it includes the boostrap seed, called `bootstrap-binaries`. It may be
 more surprising to see Perl and Python in the dependency list of what is
@@ -758,11 +805,11 @@ can download and run from the command line to do dependency analyses
 much like the ones I have shown. Just give the packages whose combined
 list of dependencies you want to analyze. For example:
 
-``` {.bash org-language="sh" results="output" exports="both"}
+```sh
 ./show-dependencies.scm hello
 ```
 
-``` {.example}
+```
 Packages: 1
   hello@2.10
 Package inputs: 0 packages
@@ -778,13 +825,13 @@ Guile. For example, suppose you have a small Python script that plots
 some data using matplotlib. What are its dependencies? First you should
 check that it runs in a minimal environment:
 
-``` {.bash org-language="sh" results="output" exports="both" eval="no"}
+```sh
 guix environment --container --ad-hoc python python-matplotlib -- python my-script.py
 ```
 
 Next, find its dependencies:
 
-``` {.bash org-language="sh" results="output" exports="both" eval="no"}
+```sh
 ./show-dependencies.scm python python-matplotlib
 ```
 
@@ -860,11 +907,11 @@ complex dependency graphs that I have analyzed up to here are encoded in
 the Guix source code, so all you need to re-create your environment is
 the exact same version of Guix! You get that version using
 
-``` {.bash org-language="sh" results="output" exports="both"}
+```sh
 guix describe
 ```
 
-``` {.example}
+```
 Generation 15 Jan 06 2020 13:30:45    (current)
   guix 769b96b
     repository URL: https://git.savannah.gnu.org/git/guix.git
@@ -877,22 +924,20 @@ hexadecimal digits after \"commit\". This is all it takes to uniquely
 identify a version of Guix. And to re-use it in the future, all you need
 is Guix\' time machine:
 
-``` {.bash org-language="sh" session="reproduce-C-compiler" results="output" exports="both"}
+```sh
 guix time-machine --commit=769b96b62e8c09b078f73adc09fb860505920f8f -- environment --ad-hoc gcc-toolchain
 ```
 
-``` {.example}
-
+```
 Updating channel 'guix' from Git repository at 'https://git.savannah.gnu.org/git/guix.git'...
 ```
 
-``` {.bash org-language="sh" session="reproduce-C-compiler" results="output" exports="both"}
+```sh
 gcc pi.c -o pi
 ./pi
 ```
 
-``` {.example}
-
+```
 M_PI                         : 3.1415926536
 4 * atan(1.)                 : 3.1415926536
 Leibniz' formula (four terms): 2.8952380952
@@ -900,7 +945,9 @@ Leibniz' formula (four terms): 2.8952380952
 
 The time machine actually downloads the specified version of Guix and
 passes it the rest of the command line. You are running the same code
-again. Even bugs in Guix will be reproduced faithfully!
+again. Even bugs in Guix will be reproduced faithfully! As before,
+`guix environment` leaves us in a special-environment shell which
+needs to be terminated by Ctrl-D.
 
 For many practical use cases, this technique is sufficient. But there
 are two variants you should know about for more complicated situations:
@@ -914,28 +961,26 @@ are two variants you should know about for more complicated situations:
     are not part of the official Guix distribution, you should store a
     complete channel description in a file using
 
-``` {.bash org-language="sh" results="none" exports="code"}
+```sh
 guix describe -f channels > guix-version-for-reproduction.txt
 ```
 
 and feed that file to the time machine:
 
-``` {.bash org-language="sh" session="reproduce-C-compiler-2" results="output" exports="both"}
+```sh
 guix time-machine --channels=guix-version-for-reproduction.txt -- environment --ad-hoc gcc-toolchain
 ```
 
-``` {.example}
-
+```
 Updating channel 'guix' from Git repository at 'https://git.savannah.gnu.org/git/guix.git'...
 ```
 
-``` {.bash org-language="sh" session="reproduce-C-compiler-2" results="output" exports="both"}
+```sh
 gcc pi.c -o pi
 ./pi
 ```
 
-``` {.example}
-
+```
 M_PI                         : 3.1415926536
 4 * atan(1.)                 : 3.1415926536
 Leibniz' formula (four terms): 2.8952380952
@@ -945,7 +990,7 @@ Last, if your colleagues do not use Guix yet, you can pack your
 reproducible software for use on other systems: as a tarball, or as a
 Docker or Singularity container image. For example:
 
-``` {.bash org-language="sh" results="output" exports="code"}
+```sh
 guix pack            \
      -f docker       \
      -C none         \
@@ -954,6 +999,10 @@ guix pack            \
      -S /share=share \
      -S /etc=etc     \
      gcc-toolchain
+```
+
+```
+/gnu/store/iqn9yyvi8im18g7y9f064lw9s9knxp0w-docker-pack.tar
 ```
 
 will produce a Docker container image, and with the knowledge of the
